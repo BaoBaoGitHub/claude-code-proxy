@@ -35,8 +35,8 @@ class Config:
         if not self.openai_api_key:
             return False
         # Basic format check for OpenAI API keys
-        if not self.openai_api_key.startswith('sk-'):
-            return False
+        # if not self.openai_api_key.startswith('sk-'):
+        #     return False
         return True
         
     def validate_client_api_key(self, client_api_key):
