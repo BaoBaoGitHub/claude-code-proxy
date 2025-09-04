@@ -40,6 +40,7 @@ class Config:
         return True
         
     def validate_client_api_key(self, client_api_key):
+        return True
         """Validate client's Anthropic API key"""
         # If no ANTHROPIC_API_KEY is set in environment, skip validation
         if not self.anthropic_api_key:

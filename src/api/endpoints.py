@@ -43,12 +43,12 @@ async def validate_api_key(x_api_key: Optional[str] = Header(None), authorizatio
         return
         
     # Validate the client API key
-    if not client_api_key or not config.validate_client_api_key(client_api_key):
-        logger.warning(f"Invalid API key provided by client")
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid API key. Please provide a valid Anthropic API key."
-        )
+    # if not client_api_key or not config.validate_client_api_key(client_api_key):
+    #     logger.warning(f"Invalid API key provided by client")
+    #     raise HTTPException(
+    #         status_code=401,
+    #         detail="Invalid API key. Please provide a valid Anthropic API key."
+    #     )
 
 @router.post("/v1/messages")
 async def create_message(request: ClaudeMessagesRequest, http_request: Request, _: None = Depends(validate_api_key)):
