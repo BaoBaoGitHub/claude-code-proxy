@@ -9,7 +9,7 @@ from openai._exceptions import APIError, RateLimitError, AuthenticationError, Ba
 class OpenAIClient:
     """Async OpenAI client with cancellation support."""
     
-    def __init__(self, api_key: str, base_url: str, timeout: int = 90, api_version: Optional[str] = None, custom_headers: Optional[Dict[str, str]] = None):
+    def __init__(self, api_key: str, base_url: str, custom_headers: Optional[Dict[str, str]] = None):
         self.api_key = api_key
         self.base_url = base_url
         self.custom_headers = custom_headers or {}
@@ -23,22 +23,11 @@ class OpenAIClient:
         # Merge custom headers with default headers
         all_headers = {**default_headers, **self.custom_headers}
         
-        # Detect if using Azure and instantiate the appropriate client
-        if api_version:
-            self.client = AsyncAzureOpenAI(
-                api_key=api_key,
-                azure_endpoint=base_url,
-                api_version=api_version,
-                timeout=timeout,
-                default_headers=all_headers
-            )
-        else:
-            self.client = AsyncOpenAI(
-                api_key=api_key,
-                base_url=base_url,
-                timeout=timeout,
-                default_headers=all_headers
-            )
+        self.client = AsyncOpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            default_headers=all_headers
+        )
         self.active_requests: Dict[str, asyncio.Event] = {}
     
     async def create_chat_completion(self, request: Dict[str, Any], request_id: Optional[str] = None) -> Dict[str, Any]:
@@ -142,7 +131,8 @@ class OpenAIClient:
             status_code = getattr(e, 'status_code', 500)
             raise HTTPException(status_code=status_code, detail=self.classify_openai_error(str(e)))
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+            status_code = getattr(e, 'status_code', 500)
+            raise HTTPException(status_code=status_code, detail=f"Unexpected error: {str(e)}")
         
         finally:
             # Clean up active request tracking
@@ -153,26 +143,6 @@ class OpenAIClient:
         """Provide specific error guidance for common OpenAI API issues."""
         error_str = str(error_detail).lower()
         
-        # Region/country restrictions
-        if "unsupported_country_region_territory" in error_str or "country, region, or territory not supported" in error_str:
-            return "OpenAI API is not available in your region. Consider using a VPN or Azure OpenAI service."
-        
-        # API key issues
-        if "invalid_api_key" in error_str or "unauthorized" in error_str:
-            return "Invalid API key. Please check your OPENAI_API_KEY configuration."
-        
-        # Rate limiting
-        if "rate_limit" in error_str or "quota" in error_str:
-            return "Rate limit exceeded. Please wait and try again, or upgrade your API plan."
-        
-        # Model not found
-        if "model" in error_str and ("not found" in error_str or "does not exist" in error_str):
-            return "Model not found. Please check your BIG_MODEL and SMALL_MODEL configuration."
-        
-        # Billing issues
-        if "billing" in error_str or "payment" in error_str:
-            return "Billing issue. Please check your OpenAI account billing status."
-        
         # Default: return original message
         return str(error_detail)
     
@@ -182,3 +152,17 @@ class OpenAIClient:
             self.active_requests[request_id].set()
             return True
         return False
+
+    def __str__(self):
+        # Mask API key for security - only show first 4 and last 4 characters
+        masked_key = "****"
+        if self.api_key and len(self.api_key) > 8:
+            masked_key = f"{self.api_key[:4]}...{self.api_key[-4:]}"
+        elif self.api_key:
+            masked_key = "****"
+        
+        return (
+            f"<OpenAIClient base_url={self.base_url} "
+            f"api_key={masked_key} "
+            f"custom_headers={self.custom_headers}>"
+        )

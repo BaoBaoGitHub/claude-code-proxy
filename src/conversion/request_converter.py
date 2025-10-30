@@ -1,6 +1,5 @@
 import json
 from typing import Dict, Any, List
-from venv import logger
 from src.core.constants import Constants
 from src.models.claude import ClaudeMessagesRequest, ClaudeMessage
 from src.core.config import config
@@ -77,10 +76,7 @@ def convert_claude_to_openai(
     openai_request = {
         "model": openai_model,
         "messages": openai_messages,
-        "max_tokens": min(
-            max(claude_request.max_tokens, config.min_tokens_limit),
-            config.max_tokens_limit,
-        ),
+        "max_tokens": claude_request.max_tokens,
         "temperature": claude_request.temperature,
         "stream": claude_request.stream,
     }

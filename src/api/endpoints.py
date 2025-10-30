@@ -14,41 +14,13 @@ from src.conversion.response_converter import (
     convert_openai_streaming_to_claude_with_cancellation,
 )
 from src.core.model_manager import model_manager
+from src.utils.http_util import get_x_api_key, get_custom_headers
 
 router = APIRouter()
 
-# Get custom headers from config
-custom_headers = config.get_custom_headers()
-
-openai_client = OpenAIClient(
-    config.openai_api_key,
-    config.openai_base_url,
-    config.request_timeout,
-    api_version=config.azure_api_version,
-    custom_headers=custom_headers,
-)
-
 async def validate_api_key(x_api_key: Optional[str] = Header(None), authorization: Optional[str] = Header(None)):
     """Validate the client's API key from either x-api-key header or Authorization header."""
-    client_api_key = None
-    
-    # Extract API key from headers
-    if x_api_key:
-        client_api_key = x_api_key
-    elif authorization and authorization.startswith("Bearer "):
-        client_api_key = authorization.replace("Bearer ", "")
-    
-    # Skip validation if ANTHROPIC_API_KEY is not set in the environment
-    if not config.anthropic_api_key:
-        return
-        
-    # Validate the client API key
-    if not client_api_key or not config.validate_client_api_key(client_api_key):
-        logger.warning(f"Invalid API key provided by client")
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid API key. Please provide a valid Anthropic API key."
-        )
+    return
 
 @router.post("/v1/messages")
 async def create_message(request: ClaudeMessagesRequest, http_request: Request, _: None = Depends(validate_api_key)):
@@ -56,9 +28,15 @@ async def create_message(request: ClaudeMessagesRequest, http_request: Request, 
         logger.debug(
             f"Processing Claude request: model={request.model}, stream={request.stream}"
         )
+        x_api_key = get_x_api_key(http_request)
+        openai_client = OpenAIClient(
+            api_key=x_api_key,
+            base_url=config.openai_base_url,
+            # custom_headers=get_custom_headers(http_request),
+        )
 
         # Generate unique request ID for cancellation tracking
-        request_id = str(uuid.uuid4())
+        request_id = str(x_api_key) + "-" + str(uuid.uuid4())
 
         # Convert Claude request to OpenAI format
         openai_request = convert_claude_to_openai(request, model_manager)
@@ -121,7 +99,6 @@ async def create_message(request: ClaudeMessagesRequest, http_request: Request, 
         error_message = openai_client.classify_openai_error(str(e))
         raise HTTPException(status_code=500, detail=error_message)
 
-
 @router.post("/v1/messages/count_tokens")
 async def count_tokens(request: ClaudeTokenCountRequest, _: None = Depends(validate_api_key)):
     try:
@@ -158,77 +135,3 @@ async def count_tokens(request: ClaudeTokenCountRequest, _: None = Depends(valid
     except Exception as e:
         logger.error(f"Error counting tokens: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "openai_api_configured": bool(config.openai_api_key),
-        "api_key_valid": config.validate_api_key(),
-        "client_api_key_validation": bool(config.anthropic_api_key),
-    }
-
-
-@router.get("/test-connection")
-async def test_connection():
-    """Test API connectivity to OpenAI"""
-    try:
-        # Simple test request to verify API connectivity
-        test_response = await openai_client.create_chat_completion(
-            {
-                "model": config.small_model,
-                "messages": [{"role": "user", "content": "Hello"}],
-                "max_tokens": 5,
-            }
-        )
-
-        return {
-            "status": "success",
-            "message": "Successfully connected to OpenAI API",
-            "model_used": config.small_model,
-            "timestamp": datetime.now().isoformat(),
-            "response_id": test_response.get("id", "unknown"),
-        }
-
-    except Exception as e:
-        logger.error(f"API connectivity test failed: {e}")
-        return JSONResponse(
-            status_code=503,
-            content={
-                "status": "failed",
-                "error_type": "API Error",
-                "message": str(e),
-                "timestamp": datetime.now().isoformat(),
-                "suggestions": [
-                    "Check your OPENAI_API_KEY is valid",
-                    "Verify your API key has the necessary permissions",
-                    "Check if you have reached rate limits",
-                ],
-            },
-        )
-
-
-@router.get("/")
-async def root():
-    """Root endpoint"""
-    return {
-        "message": "Claude-to-OpenAI API Proxy v1.0.0",
-        "status": "running",
-        "config": {
-            "openai_base_url": config.openai_base_url,
-            "max_tokens_limit": config.max_tokens_limit,
-            "api_key_configured": bool(config.openai_api_key),
-            "client_api_key_validation": bool(config.anthropic_api_key),
-            "big_model": config.big_model,
-            "small_model": config.small_model,
-        },
-        "endpoints": {
-            "messages": "/v1/messages",
-            "count_tokens": "/v1/messages/count_tokens",
-            "health": "/health",
-            "test_connection": "/test-connection",
-        },
-    }
